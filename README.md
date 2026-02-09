@@ -10,7 +10,8 @@ Hierarchical edge bundling visualization that maps all dependencies within a Pow
 > - **Power BI Premium** capacity (P SKUs), or
 > - **Microsoft Fabric** capacity (F SKUs)
 >
-> Without one of these, the Power Query queries that feed the visualization will not be able to connect to the semantic model's XMLA endpoint.
+> Without one of these, the Power Query queries that feed the visualization will not be able to connect to the semantic model's XMLA endpoint. A community version using Python and Altair (no Premium required) is on the roadmap.
+
 ---
 
 ## What It Does
@@ -654,6 +655,31 @@ DAX User Defined Functions appear in `DISCOVER_CALC_DEPENDENCY` with `REFERENCED
 
 ---
 
+## Known Issues & Defenses
+
+| Issue | Symptom | Defense |
+|-------|---------|---------|
+| Dots in object names | `stratify` fails silently, blank visualization | `.` replaced with `___` in DISCOVER_CALC_DEPENDENCY source query |
+| DAX UDFs (FUNCTION type) | Orphan node with null `id` poisons tree | `REFERENCED_OBJECT_TYPE <> "FUNCTION"` filter in source query |
+| Null table names from UDFs | Null table node breaks `stratify` | `CleanTables` filter in TreeNodes (`[TABLE] <> null and [TABLE] <> ""`) |
+| Auto-generated date tables | Duplicate node IDs break NodeBridge relationship | `DateTableTemplate_` / `LocalDateTable_` filter + `Table.Distinct` in NodeBridge |
+| Auto-created relationships | `(Blank)` entries in slicers, broken slicer pattern | Delete all auto-created relationships — only one manual relationship exists |
+
+---
+
+## Confirmed Working ✅
+
+- treePath() survives Deneb re-initialization after cross-filter click
+- Slicer + click composition (narrow with slicer, then drill with click)
+- Click node → detail table shows dependencies where node is source OR target
+- Click empty canvas → clears cross-filter, detail table respects slicers only
+- relInfo column shows cardinality and cross-filter direction (e.g., `* → 1`)
+- Dot sanitization handles UDF names with dots (`.` → `___`)
+- FUNCTION type filtering prevents orphan nodes from UDFs
+- Parameterized connection (`theAnalysisServiceServer`, `theDatabase`) for easy adaptation
+
+---
+
 ## Spec Version History
 
 | Version | Changes |
@@ -674,5 +700,5 @@ DAX User Defined Functions appear in `DISCOVER_CALC_DEPENDENCY` with `REFERENCED
 
 - **Table arc marks**: Sunburst-style inner ring grouping nodes by table (parked — angle calculation issue)
 - **FUAM scale-up**: Scale from 1 model to ~23,000 semantic models via FUAM lakehouse
-- **Python/Altair version**: because it will be fun
+- **Python/Altair version**: Community-shareable version that doesn't require XMLA/Premium
 - **Richer metadata**: Integration with `TMSCHEMA_COLUMNS` / `TMSCHEMA_TABLES`
