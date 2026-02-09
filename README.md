@@ -32,11 +32,13 @@ Hovering over a node highlights all its connections, showing inbound edges in re
 
 ```
 XMLA Endpoint
-  ├── DISCOVER_CALC_DEPENDENCY (DMV)
+  ├── DISCOVER_CALC_DEPENDENCY (DMV) ─► source query (sanitize dots, filter UDFs)
   └── TMSCHEMA_RELATIONSHIPS (DMV)
         │
         ▼
-Power Query (7 queries)
+Power Query (9 queries)
+  ├── DISCOVER_CALC_DEPENDENCY (staging) ← sanitized + FUNCTION rows removed
+  ├── TMSCHEMA_RELATIONSHIPS (staging)
   ├── TreeNodes (staging) ──────────────┐
   ├── Dependencies (staging) ───────────┤
   ├── EdgeBundlingData (loaded) ◄───────┘  ← Deneb dataset
@@ -79,9 +81,41 @@ Only **one relationship** exists in the entire model: `EdgeBundlingData[id]` →
 
 ## Power Query Queries
 
+### Source Query: DISCOVER_CALC_DEPENDENCY (staging — not loaded)
+
+Connects to the semantic model via XMLA endpoint using the two Power Query parameters `theAnalysisServiceServer` and `theDatabase`. Applies two critical transformations immediately after fetching the raw DMV data:
+
+1. **Dot sanitization** — replaces `.` with `___` (triple underscore) in all four name columns (`TABLE`, `OBJECT`, `REFERENCED_TABLE`, `REFERENCED_OBJECT`). This is necessary because the node ID format `Model.TableName.ObjectName` uses dots as separators, and a literal dot in an object name (e.g., a DAX UDF named `Search.RelationalDivision`) would create a phantom hierarchy level that breaks Vega's `stratify` transform.
+
+2. **UDF filtering** — removes rows where `REFERENCED_OBJECT_TYPE = "FUNCTION"`. DAX User Defined Functions (UDFs) appear in the DMV with a null `REFERENCED_TABLE` because they are not scoped to a table. This null produces an orphan node that poisons the entire tree structure.
+
+```powerquery-m
+let
+    Source = AnalysisServices.Database(theAnalysisServiceServer, theDatabase,
+        [Query="SELECT * FROM $SYSTEM.DISCOVER_CALC_DEPENDENCY"]),
+
+    // Sanitize dots in all name fields to prevent Vega treePath breakage
+    // A dot in an object name (e.g. UDF "Search.RelationalDivision") creates
+    // a phantom hierarchy level in the Model.Table.Object ID format
+    Sanitized = Table.TransformColumns(Source, {
+        {"TABLE", each Text.Replace(_, ".", "___"), type text},
+        {"OBJECT", each Text.Replace(_, ".", "___"), type text},
+        {"REFERENCED_TABLE", each Text.Replace(_, ".", "___"), type text},
+        {"REFERENCED_OBJECT", each Text.Replace(_, ".", "___"), type text}
+    }),
+
+    // Remove FUNCTION references — UDFs have no parent table and break the tree
+    Cleaned = Table.SelectRows(Sanitized, each
+        [REFERENCED_OBJECT_TYPE] <> "FUNCTION")
+in
+    Cleaned
+```
+
+> **Note on dot replacement**: If your semantic model contains objects with dots in their names (common with DAX UDFs), the display names in the visualization will show `___` where the original dot was. For example, `Search.RelationalDivision` becomes `Search___RelationalDivision`. This is a deliberate trade-off to prevent the tree structure from breaking.
+
 ### Query 1: TreeNodes (staging — not loaded)
 
-Builds the hierarchical tree structure from `DISCOVER_CALC_DEPENDENCY`. Extracts all unique objects (measures, calculated columns, columns, partitions) as leaf nodes, groups them under table nodes, and adds a single root node (`Model`).
+Builds the hierarchical tree structure from `DISCOVER_CALC_DEPENDENCY`. Extracts all unique objects (measures, calculated columns, columns, partitions) as leaf nodes, groups them under table nodes, and adds a single root node (`Model`). Filters out tables with null names (caused by UDF references that survived upstream filtering).
 
 Each node gets an `id` in the format `Model.TableName.ObjectName`, a `parent` reference (`Model.TableName` for leaves, `Model` for tables), a display `name`, and a `nodeType` (measure, calc_column, column, partition, table, root).
 
@@ -125,11 +159,13 @@ let
     TablesRef = Table.Distinct(Table.SelectColumns(Source, {"REFERENCED_TABLE"})),
     TablesRefRenamed = Table.RenameColumns(TablesRef, {{"REFERENCED_TABLE", "TABLE"}}),
     AllTables = Table.Distinct(Table.Combine({TablesSource, TablesRefRenamed})),
+    // Filter out null/blank table names (caused by UDFs with no parent table)
+    CleanTables = Table.SelectRows(AllTables, each [TABLE] <> null and [TABLE] <> ""),
 
     TableNodes = Table.AddColumn(
         Table.AddColumn(
             Table.AddColumn(
-                Table.AddColumn(AllTables, "id", each
+                Table.AddColumn(CleanTables, "id", each
                     "Model." & [TABLE], type text),
                 "name", each [TABLE], type text),
             "parent", each "Model", type text),
@@ -554,7 +590,7 @@ These parameters are already referenced by the two DMV queries (`DISCOVER_CALC_D
 
 ### Step 2: Create the Power Query Queries
 
-Create all 7 queries as documented above. `TreeNodes` and `Dependencies` should be staging queries (connection only, not loaded). The other 5 are loaded.
+Create all 9 queries as documented above. `DISCOVER_CALC_DEPENDENCY`, `TMSCHEMA_RELATIONSHIPS`, `TreeNodes`, and `Dependencies` should be staging queries (connection only, not loaded). The other 5 are loaded.
 
 ### Step 3: Delete Auto-Created Relationships
 
@@ -608,6 +644,14 @@ Measures in Deneb's Values well appear as constant columns in the dataset. `pluc
 ### Auto-Generated Date Tables
 
 Power BI creates internal date hierarchy tables with GUID-based names (e.g., `DateTableTemplate_ec992640-...`). These produce duplicate node IDs and must be filtered out in the `NodeBridge` query (and optionally in `TreeNodes` and `Dependencies`).
+
+### Dots in Object Names Break the Tree Structure
+
+The node ID format `Model.TableName.ObjectName` uses dots as hierarchy separators. If an object name itself contains a dot (common with DAX UDFs like `Search.RelationalDivision`), the `stratify` transform interprets the extra dot as an additional hierarchy level that doesn't exist, causing silent failure. The fix is to replace dots with `___` (triple underscore) in the `DISCOVER_CALC_DEPENDENCY` source query across all four name columns. The triple underscore was chosen as a deliberate marker — unlikely to collide with existing names and easy to identify as a replacement.
+
+### DAX UDFs Create Orphan Nodes
+
+DAX User Defined Functions appear in `DISCOVER_CALC_DEPENDENCY` with `REFERENCED_OBJECT_TYPE = "FUNCTION"` and a null `REFERENCED_TABLE`. Since UDFs are not scoped to a table, the `TreeNodes` query produces a node with a null `id`, which poisons the `stratify` transform and blanks the entire visualization. These rows must be filtered out at the source query level. As a belt-and-suspenders defense, the `TreeNodes` query also filters out null/blank table names when building the table node layer.
 
 ---
 
