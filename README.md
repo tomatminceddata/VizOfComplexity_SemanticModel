@@ -10,8 +10,7 @@ Hierarchical edge bundling visualization that maps all dependencies within a Pow
 > - **Power BI Premium** capacity (P SKUs), or
 > - **Microsoft Fabric** capacity (F SKUs)
 >
-> Without one of these, the Power Query queries that feed the visualization will not be able to connect to the semantic model's XMLA endpoint. A community version using Python and Altair (no Premium required) is on the roadmap.
-
+> Without one of these, the Power Query queries that feed the visualization will not be able to connect to the semantic model's XMLA endpoint.
 ---
 
 ## What It Does
@@ -675,5 +674,5 @@ DAX User Defined Functions appear in `DISCOVER_CALC_DEPENDENCY` with `REFERENCED
 
 - **Table arc marks**: Sunburst-style inner ring grouping nodes by table (parked — angle calculation issue)
 - **FUAM scale-up**: Scale from 1 model to ~23,000 semantic models via FUAM lakehouse
-- **Python/Altair version**: Community-shareable version that doesn't require XMLA/Premium
+- **Python/Altair version**: because it will be fun
 - **Richer metadata**: Integration with `TMSCHEMA_COLUMNS` / `TMSCHEMA_TABLES`
