@@ -10,8 +10,7 @@ Hierarchical edge bundling visualization that maps all dependencies within a Pow
 > - **Power BI Premium** capacity (P SKUs), or
 > - **Microsoft Fabric** capacity (F SKUs)
 >
-> Without one of these, the Power Query queries that feed the visualization will not be able to connect to the semantic model's XMLA endpoint. A community version using Python and Altair (no Premium required) is on the roadmap.
-
+> Without one of these, the Power Query queries that feed the visualization will not be able to connect to the semantic model's XMLA endpoint.
 ---
 
 ## What It Does
