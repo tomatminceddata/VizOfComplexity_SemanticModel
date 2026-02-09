@@ -630,5 +630,5 @@ Power BI creates internal date hierarchy tables with GUID-based names (e.g., `Da
 
 - **Table arc marks**: Sunburst-style inner ring grouping nodes by table (parked — angle calculation issue)
 - **FUAM scale-up**: Scale from 1 model to ~23,000 semantic models via FUAM lakehouse
-- **Python/Altair version**: Community-shareable version that doesn't require XMLA/Premium
+- **Python/Altair version**: because it will be fun
 - **Richer metadata**: Integration with `TMSCHEMA_COLUMNS` / `TMSCHEMA_TABLES`
